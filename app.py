@@ -95,3 +95,27 @@ if st.button('🔄 Scan Market Now'):
                     "Signal": signal,
                     "Reason": reason,
                     "Color": color
+                })
+        
+        my_bar.progress((i + 1) / len(PAIRS))
+        time.sleep(0.2)
+
+    if results:
+        res_df = pd.DataFrame(results)
+        cols = st.columns(len(results) if len(results) < 3 else 3)
+        
+        for index, row in res_df.iterrows():
+            with cols[index % 3]:
+                st.markdown(f"""
+                <div style="border:1px solid #444; padding: 15px; border-radius: 10px; margin-bottom: 10px; background-color: #222;">
+                    <h3 style="color: white; margin:0;">{row['Symbol']}</h3>
+                    <h4 style="color: {row['Color']}; margin: 5px 0;">{row['Signal']}</h4>
+                    <p style="margin:0;">Price: <b>${row['Price']}</b></p>
+                    <p style="margin:0;">RSI: {row['RSI']}</p>
+                    <small style="color: #aaa;">{row['Reason']}</small>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.warning("No results found. Check connection.")
+else:
+    st.info("Ready to scan.")
