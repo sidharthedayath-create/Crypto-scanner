@@ -5,51 +5,58 @@ import pandas_ta as ta
 import time
 
 # --- CONFIGURATION ---
-PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'DOGE/USDT', 'XRP/USDT']
+# We use USD pairs because Kraken trades against USD
+PAIRS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'DOGE/USD', 'XRP/USD']
 TIMEFRAME = '15m'
 EMA_LENGTH = 200
 RSI_LENGTH = 14
 
 st.set_page_config(page_title="Crypto Sniper 20x", layout="wide")
-st.title("⚡ Crypto Signal Scanner (v2)")
+st.title("⚡ Crypto Signal Scanner (US-Server Safe)")
 
 # --- FUNCTIONS ---
 def get_data(symbol):
-    # Enable Rate Limit to avoid bans
-    exchange = ccxt.binance({'enableRateLimit': True})
+    # Switch to KRAKEN (Works on US Servers)
+    exchange = ccxt.kraken()
     try:
-        # Fetch 500 candles to be safe
+        # Fetch data
         bars = exchange.fetch_ohlcv(symbol, timeframe=TIMEFRAME, limit=500)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except Exception as e:
-        st.error(f"Error fetching {symbol}: {e}")
-        return None
+        # If Kraken fails, try Coinbase
+        try:
+             exchange = ccxt.coinbase()
+             bars = exchange.fetch_ohlcv(symbol, timeframe=TIMEFRAME, limit=500)
+             df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+             return df
+        except:
+             st.error(f"Error fetching {symbol}: {e}")
+             return None
 
 def analyze_coin(df):
-    # Check if we have enough data
     if len(df) < EMA_LENGTH:
         return None, None, "NOT ENOUGH DATA", "gray", "Need more candles"
 
     # Calculate Indicators
     try:
-        df.ta.ema(length=EMA_LENGTH, append=True)
-        df.ta.rsi(length=RSI_LENGTH, append=True)
+        # standard pandas_ta calculation
+        df['EMA_200'] = ta.ema(df['close'], length=EMA_LENGTH)
+        df['RSI'] = ta.rsi(df['close'], length=RSI_LENGTH)
     except Exception as e:
-        st.error(f"Calculation Error: {e}")
         return None, None, "ERROR", "red", str(e)
 
-    # Get values
     current = df.iloc[-1]
     price = current['close']
     
-    # Check if columns exist (sometimes calculation fails silently)
-    if f'EMA_{EMA_LENGTH}' not in df.columns or f'RSI_{RSI_LENGTH}' not in df.columns:
-         return price, 0, "CALC ERROR", "red", "Indicators missing"
-         
-    ema = current[f'EMA_{EMA_LENGTH}']
-    rsi = current[f'RSI_{RSI_LENGTH}']
+    # Safety check for NaN values
+    if pd.isna(current['EMA_200']) or pd.isna(current['RSI']):
+         return price, 0, "CALC ERROR", "red", "Not enough history"
+
+    ema = current['EMA_200']
+    rsi = current['RSI']
     
     signal = "NEUTRAL"
     color = "white"
@@ -69,10 +76,9 @@ def analyze_coin(df):
 
 # --- MAIN APP ---
 if st.button('🔄 Scan Market Now'):
-    st.write("Scanning... please wait...")
+    st.write("Scanning Kraken data... please wait...")
     results = []
     
-    # Progress bar
     my_bar = st.progress(0)
     
     for i, symbol in enumerate(PAIRS):
@@ -81,7 +87,6 @@ if st.button('🔄 Scan Market Now'):
         if df is not None:
             price, rsi, signal, color, reason = analyze_coin(df)
             
-            # Only add if we got valid data
             if price is not None:
                 results.append({
                     "Symbol": symbol,
@@ -90,31 +95,3 @@ if st.button('🔄 Scan Market Now'):
                     "Signal": signal,
                     "Reason": reason,
                     "Color": color
-                })
-        
-        # Update progress
-        my_bar.progress((i + 1) / len(PAIRS))
-        
-        # Tiny sleep to be nice to the API
-        time.sleep(0.5)
-
-    # Display Results
-    if results:
-        res_df = pd.DataFrame(results)
-        cols = st.columns(len(results) if len(results) < 3 else 3)
-        
-        for index, row in res_df.iterrows():
-            with cols[index % 3]:
-                st.markdown(f"""
-                <div style="border:1px solid #444; padding: 15px; border-radius: 10px; margin-bottom: 10px; background-color: #222;">
-                    <h3 style="color: white; margin:0;">{row['Symbol']}</h3>
-                    <h4 style="color: {row['Color']}; margin: 5px 0;">{row['Signal']}</h4>
-                    <p style="margin:0;">Price: <b>${row['Price']}</b></p>
-                    <p style="margin:0;">RSI: {row['RSI']}</p>
-                    <small style="color: #aaa;">{row['Reason']}</small>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.warning("No results found. Check connection.")
-else:
-    st.info("Ready to scan.")
